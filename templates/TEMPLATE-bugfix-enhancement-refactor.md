@@ -24,10 +24,14 @@ _(wajib untuk bugfix — jangan langsung ke solusi sebelum akar masalah jelas)_
 - Komponen terdampak:
 - Blast Radius:
 
-## 5. Mandatory Review Section
+## 5. Lifecycle Stage Tracking
+_(salin varian yang sesuai dari `TEMPLATE-lifecycle-tracking.md`; lihat 03 §3.1.1)_
+
+## 6. Mandatory Review Section
 _(salin dari TEMPLATE-review-checklist.md — WAJIB termasuk Regression Risk & Rollback Plan)_
 
-## 6. Closing
+## 7. Closing
 ### Post Implementation Review
 ### Lessons Learned
 ### Future Improvement
+

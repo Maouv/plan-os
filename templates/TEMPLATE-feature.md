@@ -34,10 +34,14 @@ _(komponen terdampak, API contract, data model jika relevan)_
 ## 5. Implementation Notes
 _(catatan teknis singkat, bukan pengganti kode)_
 
-## 6. Mandatory Review Section
+## 6. Lifecycle Stage Tracking
+_(salin varian yang sesuai dari `TEMPLATE-lifecycle-tracking.md` — Compact Form selama status idea/planning, Expanded Form begitu in-progress. Jangan enumerasi 27 baris manual, lihat 03 §3.1.1)_
+
+## 7. Mandatory Review Section
 _(salin dari TEMPLATE-review-checklist.md — WAJIB, lihat 03-LIFECYCLE-AND-REVIEW-SYSTEM.md)_
 
-## 7. Closing
+## 8. Closing
 ### Post Implementation Review
 ### Lessons Learned
 ### Future Improvement
+

@@ -60,18 +60,21 @@ _(pakai SWOT/PESTLE/JTBD sesuai konteks — lihat `02-VOCABULARY-AND-FRAMEWORKS.
 | Risk/Dependency | Tipe | Mitigasi | Owner |
 |---|---|---|---|
 
+## 7. Lifecycle Stage Tracking
+_(salin varian yang sesuai dari `TEMPLATE-lifecycle-tracking.md` — level project, per-fase di § 3 WBS bisa dijadikan acuan klaster mana yang aktif; lihat 03 §3.1.1)_
+
 ---
 
 [Lihat Mandatory Review Section penuh di `TEMPLATE-review-checklist.md` — salin di bawah ini]
 
-## 7. Mandatory Review Section
+## 8. Mandatory Review Section
 _(salin dari TEMPLATE-review-checklist.md)_
 
-## 8. Decision Log
+## 9. Decision Log
 > Ringkasan; detail penuh di `09-decision-log.md` project ini.
 
-## 9. Closing
-### 9.1 Post Implementation Review
-### 9.2 Lessons Learned
-### 9.3 Status Akhir
+## 10. Closing
+### 10.1 Post Implementation Review
+### 10.2 Lessons Learned
+### 10.3 Status Akhir
 

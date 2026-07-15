@@ -49,6 +49,35 @@ Tahap dikelompokkan menjadi 6 klaster agar mudah dipetakan ke framework di `02`.
 
 > **Aturan:** Tahap boleh disederhanakan (digabung dalam satu baris "Not Applicable — [alasan singkat]") untuk pekerjaan kecil, tapi **heading tahap tidak boleh dihapus**. Ini mencegah orang diam-diam melewati tahap penting hanya karena terburu-buru.
 
+### 3.1.1 Format Tracking Ringkas (Compact Tracking Format)
+
+> Ditambahkan setelah ditemukan kasus nyata: sebuah feature file
+> menghasilkan ~216 baris dengan ~95% adalah boilerplate 27 baris "Not
+> started" yang identik di setiap file. Akar masalahnya bukan orang yang
+> menulisnya salah — spec di atas bilang 27 tahap **wajib** di-track, tapi
+> tidak pernah bilang **dalam format apa**. Tanpa arahan eksplisit, hasil
+> defaultnya adalah enumerasi harfiah 27 baris per entitas, yang murni
+> boilerplate saat entitas belum mulai dikerjakan sama sekali.
+
+Aturan konkretnya:
+
+- Selama `status` entitas masih `idea | discovery | backlog | ready |
+  planning`, ke-27 tahap **tidak perlu** dituliskan satu per satu. Cukup
+  satu baris: "belum ada stage yang dimulai, lihat 03 §3.1."
+- Begitu `status` naik ke `in-progress` (atau setara), baru tahap yang
+  **sedang/sudah** dijalani ditulis per-stage. Klaster yang belum
+  tersentuh boleh tetap 1 baris ringkas per klaster (bukan per stage).
+- Klaster yang sudah selesai 100% boleh diringkas balik jadi satu baris
+  `Klaster N: Done`.
+- Yang tidak boleh terjadi: entitas sudah `in-progress`/`done` tapi
+  sebuah klaster/stage yang relevan tidak pernah disebut statusnya sama
+  sekali (itu berarti tahap tersebut dilewati diam-diam — justru yang
+  ingin dicegah oleh aturan di atas).
+
+Format lengkap (compact vs expanded, dengan contoh) ada di
+`templates/TEMPLATE-lifecycle-tracking.md` — salin dari sana, jangan
+enumerasi manual dari nol.
+
 ---
 
 ## 3.2 Mandatory Review Section (Wajib di SETIAP Feature/Task/Bug Fix/Refactor/Enhancement)
@@ -100,3 +129,4 @@ Tidak opsional. Ini bagian tetap dari `templates/` — lihat template terkait un
 - Seluruh 14 poin Mandatory Review Section (§ 3.2) terisi.
 - Seluruh tahap klaster 3 & 4 di § 3.1 sudah dilalui (atau ditandai Not Applicable dengan alasan).
 - Decision Log diperbarui jika ada keputusan penting selama pengerjaan.
+

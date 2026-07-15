@@ -36,7 +36,42 @@
 3. Update `status: done` di metadata.
 4. Setelah periode retensi aktif berakhir (ditentukan tim, default 1 rilis siklus), pindahkan file ke `99-archive/` — **jangan dihapus**, ubah status jadi `archived`.
 
-### SOP-05: Mengubah Kernel Planning-OS Itu Sendiri
+### SOP-05: End-of-Session Checkpoint (Entitas Belum Done)
+> Ditambahkan setelah ditemukan pola berulang lintas sesi AI: entitas
+> `in-progress` dibiarkan tanpa update, sehingga sesi berikutnya terpaksa
+> re-derive status dengan baca ulang seluruh file/kode dari nol — boros
+> tool call/context, dan rawan salah simpul. SOP-04 hanya mewajibkan update
+> pas entitas **selesai total**; SOP ini menutup celah untuk entitas yang
+> berhenti di tengah jalan.
+
+Wajib dijalankan sebelum sesi AI berhenti bekerja di entitas kerja mana pun
+yang statusnya **belum** `done`/`archived` (termasuk kalau berhenti karena
+rate limit, habis waktu, atau sekadar ganti topik):
+
+1. Update `updated:` di metadata ke tanggal sesi ini.
+2. Update `Lifecycle Stage Tracking` ke kondisi nyata sekarang — pakai
+   Expanded Form (`templates/TEMPLATE-lifecycle-tracking.md`) begitu ada
+   satu stage saja yang sudah mulai. **Dilarang** membiarkan tracking bilang
+   "Not started"/Compact Form kalau kerjaan sebenarnya sudah jalan — itu
+   persis kegagalan yang bikin sesi berikutnya bingung.
+3. Tambahkan (append, jangan timpa) 1–3 baris di sub-bagian **Session Log**
+   di dalam Lifecycle Stage Tracking: apa yang barusan dikerjakan/diputuskan
+   sesi ini. Ini pengganti murah untuk histori chat yang tidak terwariskan
+   ke sesi lain.
+4. **Dilarang mengarang istilah status/gate baru** yang tidak ada di
+   `VALID_STATUSES` (`pos.py`) atau di § 3.1/3.1.1 — mis. "not yet
+   authorized", "pending approval dari X", dll. `status:` field **sudah**
+   menyatakan boleh/tidaknya implementasi mulai (`planning` = belum boleh,
+   `in-progress` = sedang jalan). Kalau memang ada gate approval manusia
+   yang sungguhan (bukan sekadar status field), itu wajib dicatat sebagai
+   entri Decision Log (`09-decision-log.md`, Mandatory Rules poin 5) —
+   bukan kalimat bebas di lifecycle tracking yang tiap sesi bisa ditafsirkan
+   beda-beda.
+5. Kalau AI tidak yakin boleh menaikkan `status` (mis. dari `planning` ke
+   `in-progress`), **tanya ke user**, jangan menebak atau menulis kalimat
+   pagar sendiri untuk "aman."
+
+### SOP-06: Mengubah Kernel Planning-OS Itu Sendiri
 Lihat § 5.3 Governance — tidak boleh diedit bebas seperti file project biasa.
 
 ---
@@ -52,6 +87,7 @@ Lihat § 5.3 Governance — tidak boleh diedit bebas seperti file project biasa.
 7. Kernel (`00`–`06` root) hanya boleh diubah lewat proses Governance (§ 5.3), tidak lewat edit langsung oleh 1 orang.
 8. Backlog wajib dipisah per intent — Feature / Refactor-Enhancement / Bug tidak boleh dicampur dalam satu file atau satu daftar (`04` § 4.2a). Capture boleh bulk, tapi pemrosesan (Requirement → Implementation → Mandatory Review) wajib satu entitas kerja per waktu, berurutan sesuai dependency — bukan diproses serentak hanya karena diminta bulk oleh user.
 9. Jika permintaan user dalam satu batch mengandung intent yang ambigu, saling kontradiksi, atau requirement yang belum jelas, AI wajib berhenti dan minta klarifikasi (`05` SOP-00 poin 3) sebelum mencatat/memproses — AI tidak boleh menebak demi terlihat responsif, terutama karena keinginan user bisa berubah-ubah atau tidak konsisten antar pesan.
+10. Sebelum sesi AI berhenti bekerja di entitas yang belum `done`/`archived`, wajib jalankan SOP-05 (End-of-Session Checkpoint). Dilarang mengarang istilah status/gate baru di luar `VALID_STATUSES` dan § 3.1/3.1.1 (mis. "not yet authorized") — kalau ada gate approval manusia yang sungguhan, itu masuk Decision Log (poin 5 di atas), bukan kalimat bebas di lifecycle tracking.
 
 ---
 
@@ -90,3 +126,4 @@ Lihat § 5.3 Governance — tidak boleh diedit bebas seperti file project biasa.
 
 - Sistem ini didesain agar bisa menambah jenis entitas kerja baru (mis. "Experiment" untuk A/B test, "Migration" untuk perpindahan sistem) dengan pola yang sama: tambah 1 template baru di `templates/`, tambah 1 folder scaffold baru di `04`, daftarkan di index — tanpa mengubah prinsip inti.
 - Integrasi ke tools eksekusi nyata (Jira/Linear/Notion) diperlakukan sebagai **lapisan sinkronisasi**, bukan pengganti SSoT: file Markdown di sistem ini tetap sumber kebenaran; tool eksternal adalah cermin/pelaksana, bukan alternatif dokumentasi.
+
