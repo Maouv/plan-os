@@ -39,19 +39,26 @@ USAGE
     python3 pos.py validate <path-ke-project>
     python3 pos.py validate <path-ke-project> --stale-days 14
     python3 pos.py validate <path-ke-project> --full-instance
+    python3 pos.py validate <path-ke-project> --json   (output terstruktur untuk
+        dikonsumsi tool/agent lain, mis. Hermes — bukan scrape teks manusia)
     python3 pos.py new-id <path-ke-project> <TYPE>
     python3 pos.py new-id <path-ke-project> <TYPE> --claim   (langsung catat
         ID ini sebagai "sudah dipakai" di .pos-id-ledger.json, mencegah race
         antar sesi AI yang jalan paralel)
     python3 pos.py depgraph <path-ke-project>
     python3 pos.py depgraph <path-ke-project> --allow-empty
+    python3 pos.py depgraph <path-ke-project> --json   (sertakan failure_type:
+        "path_not_found" | "empty_graph" | "cycle" | "dangling_ref" | null)
 
 TYPE yang dikenal: PROJ, FEAT, TASK, BUG, ENH, REF, MIG, BKLG
 (bisa ditambah sendiri di ID_PREFIXES di bawah kalau Planning-OS di-extend)
 
-Exit code: 0 kalau validate/depgraph bersih, 1 kalau ada temuan pelanggaran
-atau circular dependency atau graph kosong tanpa --allow-empty (untuk dipakai
-di CI / pre-commit hook / SOP-04 closing check).
+Exit code: 0 kalau validate/depgraph bersih, 1 kalau ada temuan pelanggaran,
+circular dependency, dangling depends_on reference, atau graph kosong tanpa
+--allow-empty (untuk dipakai di CI / pre-commit hook / SOP-04 closing check).
+`--json` tidak mengubah exit code, hanya format output — exit code tetap jadi
+sinyal utama untuk gate/CI, `--json` untuk konsumsi terprogram yang butuh
+detail per-temuan.
 """
 
 from __future__ import annotations
@@ -290,6 +297,16 @@ def validate_project(root: Path, stale_days: int | None = None, full_instance: b
         "skipped": len(skipped),
     }
 
+    # issue #12 pra-scan: hitung berapa file yang mendeklarasikan tiap id agar
+    # orphan-check di bawah tahu kapan fallback "id muncul di index" AMBIGU
+    # (duplicate id) dan harus dimatikan untuk file-file yang berbagi id itu.
+    id_counts: dict[str, int] = {}
+    for f in entities:
+        m = parse_metadata(f.read_text(encoding="utf-8", errors="replace"))
+        fid = (m or {}).get("id", "")
+        if fid:
+            id_counts[fid] = id_counts.get(fid, 0) + 1
+
     for f in entities:
         text = f.read_text(encoding="utf-8", errors="replace")
         rel = relpath(root, f)
@@ -349,10 +366,23 @@ def validate_project(root: Path, stale_days: int | None = None, full_instance: b
             )
 
         # --- Rule: file wajib terdaftar di 00-INDEX.md folder induknya ---
+        # issue #12 fix: dulu fallback-nya "id file ini muncul di suatu tempat
+        # di idx_text" — substring global, bukan baris registrasi spesifik
+        # untuk file ini. Kalau dua file berbagi id yang sama (duplicate id)
+        # dan cuma satu yang benar-benar terdaftar, file yang TIDAK terdaftar
+        # tetap lolos karena id-nya ikut "ketemu" lewat baris registrasi file
+        # lain. Fix: fallback id-based HANYA dipakai kalau id itu unik
+        # (id_counts == 1) di antara entities yang diperiksa — begitu id
+        # duplikat, fallback dimatikan dan registrasi wajib dibuktikan lewat
+        # nama file itu sendiri, bukan id yang bisa dipakai bersama.
         parent_index = f.parent / "00-INDEX.md"
         if parent_index.exists():
             idx_text = parent_index.read_text(encoding="utf-8", errors="replace")
-            if f.name not in idx_text and (meta or {}).get("id", "") not in idx_text:
+            fid = (meta or {}).get("id", "")
+            registered = f.name in idx_text
+            if not registered and fid and id_counts.get(fid, 0) == 1:
+                registered = fid in idx_text
+            if not registered:
                 report.error(
                     rel,
                     f"File tidak disebut di {relpath(root, parent_index)} — dianggap orphan (04 §4.8 rule 2).",
@@ -458,6 +488,27 @@ def print_report(report: ValidationReport, root: Path) -> int:
     return 1 if errors else 0
 
 
+def print_report_json(report: ValidationReport, root: Path) -> int:
+    """Versi machine-readable dari print_report(), untuk `validate --json` —
+    dipakai supaya tool/agent lain (mis. Hermes) bisa parse hasil per finding
+    tanpa scrape teks manusia. Exit code sama persis dengan mode teks."""
+    errors = [f for f in report.findings if f.severity == "error"]
+    warns = [f for f in report.findings if f.severity == "warn"]
+    payload = {
+        "root": str(root),
+        "scope": report.scope,
+        "findings": [
+            {"severity": f.severity, "file": f.file, "message": f.message}
+            for f in report.findings
+        ],
+        "error_count": len(errors),
+        "warn_count": len(warns),
+        "ok": len(errors) == 0,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    return 1 if errors else 0
+
+
 # ---------------------------------------------------------------------------
 # new-id
 # ---------------------------------------------------------------------------
@@ -494,6 +545,19 @@ def new_id(root: Path, type_key: str, claim: bool) -> str:
     if type_key not in ID_PREFIXES:
         known = ", ".join(sorted(ID_PREFIXES))
         raise SystemExit(f"Tipe '{type_key}' tidak dikenal. Pilihan: {known}")
+
+    # issue #11 fix: sebelumnya --claim langsung lanjut ke save_ledger(), yang
+    # menulis .pos-id-ledger.json ke folder yang belum ada -> unhandled
+    # FileNotFoundError sampai ke shell. new-id TANPA --claim tetap boleh
+    # jalan di path yang belum ada (cuma menghitung, tidak menulis apa-apa),
+    # sama seperti validate_project()/run_depgraph() yang sudah guard
+    # root.exists() lebih dulu.
+    if claim and not root.exists():
+        raise SystemExit(
+            f"❌ Path project tidak ditemukan: {root} — tidak bisa --claim ID di sini "
+            f"karena ledger (.pos-id-ledger.json) butuh folder project yang sudah ada. "
+            f"Scaffold dulu foldernya (lihat 05 SOP §New project), baru claim ID."
+        )
 
     ledger = load_ledger(root)
     ledger_max = ledger.get(type_key, 0)
@@ -586,10 +650,32 @@ def topological_order(graph: dict[str, list[str]]) -> list[str]:
     return order
 
 
-def run_depgraph(root: Path, allow_empty: bool = False) -> int:
+def run_depgraph(root: Path, allow_empty: bool = False, json_output: bool = False) -> int:
+    """`json_output=True` mengembalikan payload machine-readable (root,
+    entity_count, unknown_refs, cycles, order, failure_type, ok) alih-alih
+    teks manusia — dipakai oleh `depgraph --json`. Pesan teks tetap identik
+    dengan mode default; dikumpulkan lewat emit() lalu di-flush di akhir
+    supaya kedua mode selalu konsisten dari satu sumber logika yang sama."""
+    lines: list[str] = []
+
+    def emit(msg: str = ""):
+        lines.append(msg)
+
+    def finish(exit_code: int, payload: dict) -> int:
+        if json_output:
+            print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+        else:
+            for line in lines:
+                print(line)
+        return exit_code
+
     if not root.exists():
-        print(f"❌ Path project tidak ditemukan: {root}")
-        return 1
+        emit(f"❌ Path project tidak ditemukan: {root}")
+        return finish(1, {
+            "root": str(root), "path_exists": False, "entity_count": 0,
+            "unknown_refs": [], "cycles": [], "order": [],
+            "ok": False, "failure_type": "path_not_found",
+        })
 
     graph, labels = build_dep_graph(root)
 
@@ -599,16 +685,24 @@ def run_depgraph(root: Path, allow_empty: bool = False) -> int:
         # benar-benar terjadi saat audit awal Graps. Sekarang eksplisit
         # dianggap BUKAN sukses kecuali dipanggil dengan --allow-empty (mis.
         # untuk project yang memang baru dimulai dan belum punya entitas).
-        print(f"entities=0; graph not validated — tidak ada entitas dengan metadata id di {root}.")
+        emit(f"entities=0; graph not validated — tidak ada entitas dengan metadata id di {root}.")
         if allow_empty:
-            print("(--allow-empty aktif: dianggap bukan pelanggaran.)")
-            return 0
-        print(
+            emit("(--allow-empty aktif: dianggap bukan pelanggaran.)")
+            return finish(0, {
+                "root": str(root), "path_exists": True, "entity_count": 0,
+                "unknown_refs": [], "cycles": [], "order": [], "allow_empty": True,
+                "ok": True, "failure_type": None,
+            })
+        emit(
             "Jika project sudah punya feature/task yang direncanakan, ini kemungkinan "
             "besar bug (file belum di-scan atau metadata hilang). Jika project memang "
             "baru dan belum ada entitas, jalankan ulang dengan --allow-empty."
         )
-        return 1
+        return finish(1, {
+            "root": str(root), "path_exists": True, "entity_count": 0,
+            "unknown_refs": [], "cycles": [], "order": [], "allow_empty": False,
+            "ok": False, "failure_type": "empty_graph",
+        })
 
     # cek depends_on yang menunjuk ke ID yang tidak ada file-nya sama sekali
     unknown_refs = []
@@ -620,26 +714,56 @@ def run_depgraph(root: Path, allow_empty: bool = False) -> int:
     cycles = find_cycles(graph)
 
     if unknown_refs:
-        print(f"⚠️  {len(unknown_refs)} depends_on menunjuk ke ID yang tidak ditemukan file-nya:\n")
+        # issue #12 follow-up (severity: dangling depends_on): sebelumnya ini
+        # cuma dicetak dengan ⚠️ dan TETAP exit 0 — inkonsisten dengan
+        # `validate`, yang menganggap broken markdown link (04 §4.6) sebagai
+        # ERROR keras (exit 1). Dependency yang menunjuk ke ID yang filenya
+        # tidak ada adalah kelas masalah yang sama (referensi nyasar ke
+        # sesuatu yang tidak ada) — kalau satu jadi hard failure yang lain
+        # juga harus, supaya "depgraph bersih" tidak jadi false confidence
+        # yang sama seperti masalah original di issue #1/#2. Sekarang
+        # diperlakukan sebagai ERROR dan membuat depgraph exit 1.
+        emit(f"❌ {len(unknown_refs)} depends_on menunjuk ke ID yang tidak ditemukan file-nya "
+             f"(diperlakukan sebagai error — konsisten dengan broken-link check di `validate`):")
+        emit()
         for n, d in unknown_refs:
-            print(f"  {n} depends_on '{d}' — tidak ada file dengan id ini ({labels.get(n)})")
-        print()
+            emit(f"  {n} depends_on '{d}' — tidak ada file dengan id ini ({labels.get(n)})")
+        emit()
+        emit("Perbaiki depends_on yang nyasar ini sebelum urutan pemrosesan di bawah bisa dipercaya penuh.")
+        emit()
 
     if cycles:
-        print(f"❌ CIRCULAR DEPENDENCY ditemukan ({len(cycles)}) — SOP-00 poin 4/5 tidak bisa dijalankan sampai ini diperbaiki:\n")
+        emit(f"❌ CIRCULAR DEPENDENCY ditemukan ({len(cycles)}) — SOP-00 poin 4/5 tidak bisa dijalankan sampai ini diperbaiki:")
+        emit()
         for c in cycles:
-            chain = " → ".join(c)
-            print(f"  {chain}")
-        print()
-        print("Perbaiki depends_on di file-file yang terlibat sebelum melanjutkan urutan pemrosesan.")
-        return 1
+            emit(f"  {' → '.join(c)}")
+        emit()
+        emit("Perbaiki depends_on di file-file yang terlibat sebelum melanjutkan urutan pemrosesan.")
+        return finish(1, {
+            "root": str(root), "path_exists": True, "entity_count": len(graph),
+            "unknown_refs": [{"from": n, "to": d} for n, d in unknown_refs],
+            "cycles": cycles, "order": [],
+            "ok": False, "failure_type": "cycle",
+        })
 
     order = topological_order(graph)
-    print(f"✅ Tidak ada circular dependency. Urutan pemrosesan yang disarankan ({len(order)} entitas, "
-          f"dependency lebih dulu):\n")
+    if unknown_refs:
+        emit(f"⚠️  Urutan pemrosesan di bawah ({len(order)} entitas) dihitung tanpa memperhitungkan "
+             f"depends_on yang nyasar di atas — jangan dipercaya sampai referensi itu diperbaiki:")
+    else:
+        emit(f"✅ Tidak ada circular dependency. Urutan pemrosesan yang disarankan ({len(order)} entitas, "
+             f"dependency lebih dulu):")
+    emit()
     for i, fid in enumerate(order, 1):
-        print(f"  {i}. {fid} — {labels.get(fid, '')}")
-    return 0
+        emit(f"  {i}. {fid} — {labels.get(fid, '')}")
+
+    ok = not unknown_refs
+    return finish(1 if unknown_refs else 0, {
+        "root": str(root), "path_exists": True, "entity_count": len(graph),
+        "unknown_refs": [{"from": n, "to": d} for n, d in unknown_refs],
+        "cycles": [], "order": order,
+        "ok": ok, "failure_type": None if ok else "dangling_ref",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +781,9 @@ def main():
     p_validate.add_argument("--full-instance", action="store_true",
                              help="Wajibkan seluruh scaffold 04 §4.2 lengkap (00-backlog/, 01-discovery/, "
                                   "... 09-decision-log.md, dst) — gagal jika ada yang hilang")
+    p_validate.add_argument("--json", action="store_true",
+                             help="Output JSON terstruktur (scope, findings[], error_count, warn_count, ok) "
+                                  "alih-alih teks manusia — untuk dikonsumsi tool/agent lain (mis. Hermes)")
 
     p_newid = sub.add_parser("new-id", help="Generate ID berikutnya untuk tipe entitas")
     p_newid.add_argument("project_path", type=Path)
@@ -668,11 +795,16 @@ def main():
     p_depgraph.add_argument("project_path", type=Path)
     p_depgraph.add_argument("--allow-empty", action="store_true",
                              help="Jangan anggap graph kosong (0 entitas) sebagai kegagalan — untuk project baru")
+    p_depgraph.add_argument("--json", action="store_true",
+                             help="Output JSON terstruktur (entity_count, unknown_refs[], cycles[], order[], "
+                                  "failure_type, ok) alih-alih teks manusia — untuk dikonsumsi tool/agent lain")
 
     args = parser.parse_args()
 
     if args.cmd == "validate":
         report = validate_project(args.project_path, stale_days=args.stale_days, full_instance=args.full_instance)
+        if args.json:
+            sys.exit(print_report_json(report, args.project_path))
         sys.exit(print_report(report, args.project_path))
 
     elif args.cmd == "new-id":
@@ -681,9 +813,10 @@ def main():
         sys.exit(0)
 
     elif args.cmd == "depgraph":
-        sys.exit(run_depgraph(args.project_path, allow_empty=args.allow_empty))
+        sys.exit(run_depgraph(args.project_path, allow_empty=args.allow_empty, json_output=args.json))
 
 
 if __name__ == "__main__":
     main()
+
 
