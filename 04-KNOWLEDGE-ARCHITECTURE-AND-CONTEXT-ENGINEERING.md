@@ -121,7 +121,7 @@ Alur retrieval standar untuk AI/agent:
 
 - Referensi antar dokumen memakai **link relatif + ID**, contoh: `Lihat [FEAT-0031](../05-features/feature-0031-login.md)`.
 - Dilarang menyalin isi requirement/keputusan ke file lain. Jika informasi dibutuhkan di banyak tempat, tempat lain wajib berupa link, bukan salinan.
-- Decision Log (`08-decision-log.md`) adalah satu-satunya SSoT untuk histori keputusan — tidak boleh ada "keputusan" tercatat hanya di komentar task atau chat pribadi.
+- Decision Log (`09-decision-log.md`) adalah satu-satunya SSoT untuk histori keputusan — tidak boleh ada "keputusan" tercatat hanya di komentar task atau chat pribadi.
 
 ## 4.7 Versioning
 
@@ -138,3 +138,4 @@ Alur retrieval standar untuk AI/agent:
 5. **Otoritas eksplisit**: index selalu menyatakan file mana yang SSoT untuk topik apa, mencegah AI mengarang jawaban dari sumber yang salah/duplikat.
 6. **Ukuran file dibatasi**: file detail yang membengkak >~400 baris dipecah menjadi sub-file + index baru (lihat ADR-001 di `01`), supaya satu file tidak pernah menjadi terlalu besar untuk dibaca utuh dengan efisien.
 7. **Status eksplisit di metadata**: mencegah AI menganggap entitas kerja lama yang `status: archived` sebagai masih berlaku.
+

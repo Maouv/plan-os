@@ -68,9 +68,10 @@ _(pakai SWOT/PESTLE/JTBD sesuai konteks — lihat `02-VOCABULARY-AND-FRAMEWORKS.
 _(salin dari TEMPLATE-review-checklist.md)_
 
 ## 8. Decision Log
-> Ringkasan; detail penuh di `08-decision-log.md` project ini.
+> Ringkasan; detail penuh di `09-decision-log.md` project ini.
 
 ## 9. Closing
 ### 9.1 Post Implementation Review
 ### 9.2 Lessons Learned
 ### 9.3 Status Akhir
+

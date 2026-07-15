@@ -35,7 +35,7 @@ Analogi: 00–06 di folder ini adalah "kernel + dokumentasi OS". Folder `templat
 
 - **"Saya mau mulai project baru"** → `04` (struktur folder) § Project Scaffold → `templates/TEMPLATE-project.md`
 - **"Saya mau tambah 1 feature ke project yang sudah ada"** → `templates/TEMPLATE-feature.md`, taruh di `project-x/02-features/`
-- **"Ada bug"** → `templates/TEMPLATE-bugfix.md`
+- **"Ada bug"** → `templates/TEMPLATE-bugfix-enhancement-refactor.md`
 - **"Saya mau tahu apakah proses saya sudah sesuai standar"** → `03-LIFECYCLE-AND-REVIEW-SYSTEM.md`
 - **"Saya mau catat banyak ide/fitur/bug sekaligus"** → `05-SOP-GOVERNANCE-MAINTENANCE.md` SOP-00 → `templates/TEMPLATE-backlog.md` (pisahkan per intent, jangan campur feature/refactor/bug dalam satu daftar)
 
@@ -46,3 +46,4 @@ Analogi: 00–06 di folder ini adalah "kernel + dokumentasi OS". Folder `templat
 3. Setiap file besar wajib punya Summary Block agar context-efficient bagi AI.
 4. Struktur adalah hybrid: index/summary layer (ringan) + detail layer (folder per entitas) — lihat `01` untuk rasionalnya.
 5. Semua keputusan besar dicatat di Decision Log — tidak boleh hanya di chat/memory personal.
+

@@ -5,38 +5,53 @@ pos.py — Planning-OS Enforcer CLI
 Dua kapabilitas inti (dibuat karena Planning-OS aslinya 100% bergantung pada
 disiplin manual, tanpa validasi otomatis):
 
-  1. `validate`  — scan satu project instance, laporkan pelanggaran Mandatory
-                    Rules (05 § 5.2): orphan file, index tidak sinkron,
-                    metadata hilang, file > 400 baris, status tidak valid,
-                    ID duplikat, cross-reference yang nyasar, entitas stale
-                    (--stale-days).
-  2. `new-id`    — generate ID berikutnya untuk tipe entitas tertentu (FEAT/
-                    TASK/BUG/ENH/REF/MIG) dengan scan seluruh project,
-                    supaya tidak ada dua entitas kebetulan dapat ID sama.
-  3. `depgraph`  — bangun graph dari field depends_on di semua entitas,
-                    deteksi circular dependency (yang bikin SOP-00 poin 5
-                    mustahil dijalankan), dan cetak urutan pemrosesan yang
-                    valid (topological sort) sesuai amanat SOP-00 poin 4.
+  1. `validate`  — scan satu project instance (ENTITY_FOLDERS + master
+                    plan/project file di root), laporkan pelanggaran
+                    Mandatory Rules (05 § 5.2): orphan file, index tidak
+                    sinkron, metadata hilang, file > 400 baris, status tidak
+                    valid, ID duplikat, cross-reference yang nyasar, 14
+                    heading Mandatory Review Section hilang (03 §3.2),
+                    entitas stale (--stale-days). `--full-instance` juga
+                    mewajibkan seluruh scaffold 04 §4.2 lengkap.
+  2. `new-id`    — generate ID berikutnya untuk tipe entitas tertentu (PROJ/
+                    FEAT/TASK/BUG/ENH/REF/MIG/BKLG) dengan scan seluruh
+                    project, supaya tidak ada dua entitas kebetulan dapat ID
+                    sama.
+  3. `depgraph`  — bangun graph dari field depends_on di semua entitas
+                    (termasuk master plan/project file di root), deteksi
+                    circular dependency (yang bikin SOP-00 poin 5 mustahil
+                    dijalankan), dan cetak urutan pemrosesan yang valid
+                    (topological sort) sesuai amanat SOP-00 poin 4. Graph
+                    kosong dianggap KEGAGALAN kecuali `--allow-empty`.
 
 Didesain zero-dependency (stdlib only) supaya bisa langsung jalan di VPS/
 Termux tanpa install apa-apa.
+
+Catatan cakupan yang jujur (lihat issue/plan-os-tooling-and-spec-friction.md
+#3): 14 heading Mandatory Review Section ditegakkan sebagai hard error. 27
+lifecycle stage heading (03 §3.1) BELUM ditegakkan sebagai hard error karena
+template saat ini tidak mendefinisikan heading eksplisit untuk semua 27 tahap
+per tipe entitas secara seragam — validator mencetak ini sebagai catatan
+cakupan, bukan pura-pura sudah lengkap.
 
 USAGE
 -----
     python3 pos.py validate <path-ke-project>
     python3 pos.py validate <path-ke-project> --stale-days 14
+    python3 pos.py validate <path-ke-project> --full-instance
     python3 pos.py new-id <path-ke-project> <TYPE>
     python3 pos.py new-id <path-ke-project> <TYPE> --claim   (langsung catat
         ID ini sebagai "sudah dipakai" di .pos-id-ledger.json, mencegah race
         antar sesi AI yang jalan paralel)
     python3 pos.py depgraph <path-ke-project>
+    python3 pos.py depgraph <path-ke-project> --allow-empty
 
-TYPE yang dikenal: FEAT, TASK, BUG, ENH, REF, MIG, BKLG
+TYPE yang dikenal: PROJ, FEAT, TASK, BUG, ENH, REF, MIG, BKLG
 (bisa ditambah sendiri di ID_PREFIXES di bawah kalau Planning-OS di-extend)
 
 Exit code: 0 kalau validate/depgraph bersih, 1 kalau ada temuan pelanggaran
-atau circular dependency (untuk dipakai di CI / pre-commit hook / SOP-04
-closing check).
+atau circular dependency atau graph kosong tanpa --allow-empty (untuk dipakai
+di CI / pre-commit hook / SOP-04 closing check).
 """
 
 from __future__ import annotations
@@ -50,11 +65,15 @@ from datetime import date, datetime
 from pathlib import Path
 
 MAX_LINES = 400  # dari 01 ADR-001 §1.3 rule 5 dan 04 §4.8 rule 6
+# NB (issue plan-os-tooling-and-spec-friction.md #6): "discovery" ada di
+# TEMPLATE-project.md sejak awal tapi hilang dari daftar ini — project-level
+# validation jadi langsung false-positive begitu ditambahkan. Disatukan di sini.
 VALID_STATUSES = {
-    "idea", "backlog", "ready", "planning", "in-progress", "review",
+    "idea", "discovery", "backlog", "ready", "planning", "in-progress", "review",
     "reported", "investigating", "done", "archived",
 }
 ID_PREFIXES = {
+    "PROJ": "project",  # issue #5: ada di TEMPLATE-project.md tapi tidak di allocator
     "FEAT": "feature",
     "TASK": "task",
     "BUG": "bugfix",
@@ -69,11 +88,47 @@ ENTITY_FOLDERS = {
 }
 LEDGER_NAME = ".pos-id-ledger.json"
 
+# issue #4: canonical filename Decision Log = 09-decision-log.md (selaras urutan
+# scaffold di 04 §4.2). Semua referensi lain (`08-decision-log.md`) di docs/
+# template sudah disamakan ke ini.
+DECISION_LOG_NAME = "09-decision-log.md"
+
+# issue #3 (bagian review): 14 sub-bagian wajib dari 03 §3.2 / TEMPLATE-review-
+# checklist.md. Heading harus ADA (boleh isi "Not Applicable — <alasan>" untuk
+# pekerjaan kecil, tapi heading sendiri tidak boleh hilang).
+MANDATORY_REVIEW_HEADINGS = [
+    "Potential Bugs", "Known Risks", "Edge Cases", "Failure Cases",
+    "Negative Test Cases", "Regression Risk", "Rollback Plan",
+    "Validation Checklist", "Review Checklist", "Acceptance Checklist",
+    "User Testing Result", "Post Implementation Review", "Lessons Learned",
+    "Future Improvement",
+]
+
 METADATA_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 ID_LINE_RE = re.compile(r"^id:\s*([A-Z]+-\d+)\s*$", re.MULTILINE)
 STATUS_LINE_RE = re.compile(r"^status:\s*([a-zA-Z-]+)", re.MULTILINE)
 SUMMARY_BLOCK_RE = re.compile(r"\*\*Summary Block:\*\*")
 LINK_RE = re.compile(r"\]\(([^)]+\.md)\)")
+
+# Scaffold wajib per 04 §4.2 untuk "full project instance". Dipakai oleh
+# --full-instance (issue #1 & #8: sebelumnya scaffold parsial bisa lolos
+# validate 100% karena tidak ada yang mengecek kelengkapan struktur ini sama
+# sekali).
+REQUIRED_SCAFFOLD = [
+    "00-INDEX.md",
+    "00-backlog",
+    "01-discovery",
+    "02-requirement",
+    "03-planning",
+    "04-design-architecture",
+    "05-features",
+    "06-tasks",
+    "07-bugs-and-fixes",
+    "08-refactor-and-enhancement",
+    DECISION_LOG_NAME,
+    "10-review-and-retro",
+    "99-archive",
+]
 
 
 @dataclass
@@ -86,6 +141,7 @@ class Finding:
 @dataclass
 class ValidationReport:
     findings: list = field(default_factory=list)
+    scope: dict = field(default_factory=dict)  # discovered / checked / skipped counts
 
     def error(self, file: str, message: str):
         self.findings.append(Finding("error", file, message))
@@ -154,6 +210,34 @@ def entity_detail_files(root: Path) -> list[Path]:
     return out
 
 
+def root_project_files(root: Path) -> list[Path]:
+    """Master plan / project-level file langsung di root project (04 §4.2:
+    dibuat dari TEMPLATE-project.md, id: PROJ-xxxx).
+
+    issue #1 (High): sebelumnya file ini SAMA SEKALI tidak diperiksa karena
+    entity_detail_files() cuma melihat ke 4 ENTITY_FOLDERS. Master plan Graps
+    ~1.179 baris lolos validate tanpa diperiksa metadata/Summary
+    Block/lifecycle/review-nya sama sekali. Root project file dikenali dari
+    metadata `type: project` (bukan sekadar "file .md apapun di root", supaya
+    00-backlog/ dan file catatan lepas lain tidak ikut dianggap entitas wajib).
+    """
+    out = []
+    for p in sorted(root.glob("*.md")):
+        if p.name == "00-INDEX.md":
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        meta = parse_metadata(text)
+        if meta and meta.get("type") == "project":
+            out.append(p)
+    return out
+
+
+def checked_entity_files(root: Path) -> list[Path]:
+    """Union semua file yang WAJIB melalui pemeriksaan entitas penuh:
+    ENTITY_FOLDERS + master plan/project file di root (issue #1)."""
+    return root_project_files(root) + entity_detail_files(root)
+
+
 def relpath(root: Path, p: Path) -> str:
     try:
         return str(p.relative_to(root))
@@ -161,7 +245,7 @@ def relpath(root: Path, p: Path) -> str:
         return str(p)
 
 
-def validate_project(root: Path, stale_days: int | None = None) -> ValidationReport:
+def validate_project(root: Path, stale_days: int | None = None, full_instance: bool = False) -> ValidationReport:
     report = ValidationReport()
     today = date.today()
 
@@ -172,6 +256,16 @@ def validate_project(root: Path, stale_days: int | None = None) -> ValidationRep
     root_index = root / "00-INDEX.md"
     if not root_index.exists():
         report.error(relpath(root, root_index), "Project tidak punya 00-INDEX.md root (wajib, lihat 04 §4.2).")
+
+    # --- Rule (opt-in): scaffold wajib 04 §4.2 harus lengkap untuk full instance ---
+    # issue #1 acceptance criteria: "Full-instance mode gagal bila scaffold wajib
+    # tidak lengkap." Opt-in (bukan default) karena project kecil yang sengaja
+    # belum memakai semua folder (mis. belum ada bug sama sekali) bukan berarti
+    # rusak — hanya belum "full instance".
+    if full_instance:
+        for entry in REQUIRED_SCAFFOLD:
+            if not (root / entry).exists():
+                report.error(entry, "Scaffold wajib (04 §4.2) tidak ditemukan — full-instance tidak lengkap.")
 
     # --- Rule: setiap folder dengan >3 file wajib punya 00-INDEX.md ---
     for d in sorted(p for p in root.rglob("*") if p.is_dir()):
@@ -185,7 +279,18 @@ def validate_project(root: Path, stale_days: int | None = None) -> ValidationRep
     seen_ids: dict[str, str] = {}  # id -> file yang mendefinisikan
     id_pattern = re.compile(r"^[A-Z]+-\d+$")
 
-    for f in entity_detail_files(root):
+    # issue #1: dulu hanya entity_detail_files() (4 folder) yang diperiksa
+    # penuh — master plan/project file di root lolos tanpa dicek sama sekali.
+    entities = checked_entity_files(root)
+    all_files = all_md_files(root)
+    skipped = [f for f in all_files if f not in entities and f.name != "00-INDEX.md"]
+    report.scope = {
+        "discovered": len(all_files),
+        "checked": len(entities),
+        "skipped": len(skipped),
+    }
+
+    for f in entities:
         text = f.read_text(encoding="utf-8", errors="replace")
         rel = relpath(root, f)
 
@@ -218,6 +323,22 @@ def validate_project(root: Path, stale_days: int | None = None) -> ValidationRep
         # --- Rule: Summary Block wajib ---
         if "Summary Block" not in text:
             report.error(rel, "Tidak punya Summary Block (wajib, 04 §4.8 rule 4).")
+
+        # --- Rule: 14 sub-bagian Mandatory Review Section wajib ada (03 §3.2) ---
+        # issue #3 (bagian review): sebelumnya hanya string "Summary Block" yang
+        # dicek; hampir seluruh 14 heading review bisa hilang tanpa terdeteksi.
+        # Heading dicek sebagai "### <nama>"; isi boleh "Not Applicable — alasan"
+        # (03 §3.2 aturan keras), yang penting heading tidak dihapus.
+        missing_review = [
+            h for h in MANDATORY_REVIEW_HEADINGS
+            if not re.search(rf"^###\s+{re.escape(h)}\s*$", text, re.MULTILINE)
+        ]
+        if missing_review:
+            report.error(
+                rel,
+                f"Mandatory Review Section tidak lengkap — {len(missing_review)}/14 heading hilang: "
+                f"{', '.join(missing_review)} (wajib, 03 §3.2).",
+            )
 
         # --- Rule: file terlalu besar ---
         n_lines = text.count("\n") + 1
@@ -276,6 +397,24 @@ def validate_project(root: Path, stale_days: int | None = None) -> ValidationRep
             if not target.exists():
                 report.error(rel, f"Link rusak ke '{link}' (target tidak ada — 04 §4.6 dead link).")
 
+    # --- Catatan cakupan: 27 lifecycle stage heading (03 §3.1) ---
+    # issue #3 (bagian lifecycle): TEMPLATE-project.md/feature/task/bugfix TIDAK
+    # mendefinisikan heading untuk seluruh 27 tahap secara literal dan seragam
+    # (mis. task template tidak punya heading Testing/QA/Deployment/Monitoring
+    # sendiri). Memaksa 27-heading check yang seragam di semua tipe entitas akan
+    # men-false-positive setiap task/bugfix kecil yang sah sesuai desain template
+    # saat ini. Fix yang jujur untuk ini adalah redesign template per-tipe
+    # (menambahkan heading eksplisit yang applicable per tipe), bukan menambal di
+    # validator. Bagian yang SUDAH bisa ditegakkan otomatis (14 heading Mandatory
+    # Review Section, yang meng-cover cluster 3/4/5/6) sudah dicek di atas.
+    report.warn(
+        str(root),
+        "Cakupan diketahui: 27 lifecycle stage heading (03 §3.1) belum ditegakkan penuh — "
+        "template saat ini tidak mendefinisikan heading eksplisit untuk semua 27 tahap per "
+        "tipe entitas. Lihat issue plan-os-tooling-and-spec-friction.md #3 untuk rencana "
+        "redesign template yang diperlukan sebelum ini bisa jadi hard error.",
+    )
+
     # --- Rule: backlog item yang belum ditandai moved_to tapi entitas sudah ada ---
     backlog_dir = root / "00-backlog"
     if backlog_dir.exists():
@@ -290,6 +429,14 @@ def validate_project(root: Path, stale_days: int | None = None) -> ValidationRep
 
 
 def print_report(report: ValidationReport, root: Path) -> int:
+    scope = report.scope
+    if scope:
+        print(
+            f"Scope: {scope['discovered']} file .md ditemukan, "
+            f"{scope['checked']} diperiksa penuh (entity + master plan), "
+            f"{scope['skipped']} dilewati (index/backlog/catatan pendukung)."
+        )
+
     if not report.findings:
         print(f"✅ {root} bersih — tidak ada pelanggaran Mandatory Rules terdeteksi.")
         return 0
@@ -369,7 +516,7 @@ def build_dep_graph(root: Path) -> tuple[dict[str, list[str]], dict[str, str]]:
     """Return (graph: id -> [depends_on ids], labels: id -> 'rel/path (status)')."""
     graph: dict[str, list[str]] = {}
     labels: dict[str, str] = {}
-    for f in entity_detail_files(root):
+    for f in checked_entity_files(root):
         text = f.read_text(encoding="utf-8", errors="replace")
         meta = parse_metadata(text)
         if not meta:
@@ -439,7 +586,7 @@ def topological_order(graph: dict[str, list[str]]) -> list[str]:
     return order
 
 
-def run_depgraph(root: Path) -> int:
+def run_depgraph(root: Path, allow_empty: bool = False) -> int:
     if not root.exists():
         print(f"❌ Path project tidak ditemukan: {root}")
         return 1
@@ -447,8 +594,21 @@ def run_depgraph(root: Path) -> int:
     graph, labels = build_dep_graph(root)
 
     if not graph:
-        print(f"Tidak ada entitas dengan metadata id di {root}.")
-        return 0
+        # issue #2 (High): sebelumnya exit code 0 di sini, sehingga "kosong"
+        # bisa disalahartikan sebagai "graph tervalidasi dan bersih" — ini
+        # benar-benar terjadi saat audit awal Graps. Sekarang eksplisit
+        # dianggap BUKAN sukses kecuali dipanggil dengan --allow-empty (mis.
+        # untuk project yang memang baru dimulai dan belum punya entitas).
+        print(f"entities=0; graph not validated — tidak ada entitas dengan metadata id di {root}.")
+        if allow_empty:
+            print("(--allow-empty aktif: dianggap bukan pelanggaran.)")
+            return 0
+        print(
+            "Jika project sudah punya feature/task yang direncanakan, ini kemungkinan "
+            "besar bug (file belum di-scan atau metadata hilang). Jika project memang "
+            "baru dan belum ada entitas, jalankan ulang dengan --allow-empty."
+        )
+        return 1
 
     # cek depends_on yang menunjuk ke ID yang tidak ada file-nya sama sekali
     unknown_refs = []
@@ -494,20 +654,25 @@ def main():
     p_validate.add_argument("project_path", type=Path)
     p_validate.add_argument("--stale-days", type=int, default=None,
                              help="Flag entitas berstatus aktif yang tidak diupdate lebih dari N hari")
+    p_validate.add_argument("--full-instance", action="store_true",
+                             help="Wajibkan seluruh scaffold 04 §4.2 lengkap (00-backlog/, 01-discovery/, "
+                                  "... 09-decision-log.md, dst) — gagal jika ada yang hilang")
 
     p_newid = sub.add_parser("new-id", help="Generate ID berikutnya untuk tipe entitas")
     p_newid.add_argument("project_path", type=Path)
-    p_newid.add_argument("type", help="FEAT | TASK | BUG | ENH | REF | MIG | BKLG")
+    p_newid.add_argument("type", help="PROJ | FEAT | TASK | BUG | ENH | REF | MIG | BKLG")
     p_newid.add_argument("--claim", action="store_true",
                           help="Catat ID ini di ledger supaya tidak dipakai ulang (cegah race antar sesi)")
 
     p_depgraph = sub.add_parser("depgraph", help="Cek dependency graph: circular dependency + urutan pemrosesan")
     p_depgraph.add_argument("project_path", type=Path)
+    p_depgraph.add_argument("--allow-empty", action="store_true",
+                             help="Jangan anggap graph kosong (0 entitas) sebagai kegagalan — untuk project baru")
 
     args = parser.parse_args()
 
     if args.cmd == "validate":
-        report = validate_project(args.project_path, stale_days=args.stale_days)
+        report = validate_project(args.project_path, stale_days=args.stale_days, full_instance=args.full_instance)
         sys.exit(print_report(report, args.project_path))
 
     elif args.cmd == "new-id":
@@ -516,8 +681,9 @@ def main():
         sys.exit(0)
 
     elif args.cmd == "depgraph":
-        sys.exit(run_depgraph(args.project_path))
+        sys.exit(run_depgraph(args.project_path, allow_empty=args.allow_empty))
 
 
 if __name__ == "__main__":
     main()
+
