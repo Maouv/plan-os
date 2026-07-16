@@ -14,12 +14,8 @@
   pernah ketemu sendiri (dead link di Quick Start, severity High) — dicatat
   2026-07-16 — ini perubahan kernel, wajib lewat Governance § 5.3 (Change
   Proposal di `06-SELF-AUDIT.md`), bukan edit langsung.
-- [ ] TEMP-06 — `pos.py` packaging + test suite: `pyproject.toml` (biar ada
-  `pos --version` yang jadi sumber kebenaran versi, bukan teks bebas di
-  README), folder `tests/` dengan pytest — prioritas tinggi karena sudah
-  ada 12 bug terdokumentasi (`issue/new-id-claim-orhpan-file.md`) yang
-  ditemukan lewat testing manual, bukan automated test — dicatat
-  2026-07-16.
+- [x] TEMP-06 — `pos.py` packaging + test suite → moved to
+  [ENH-0001](../08-refactor-and-enhancement/enh-0001-pos-py-packaging-test-suite.md)
 - [ ] TEMP-07 — SOP-07 baru di `05` (SOP-06 sudah dipakai "Mengubah Kernel
   Planning-OS Itu Sendiri" — jangan tabrakan nomor): "Git Checkpoint
   Convention" — format pesan commit wajib terikat ID entity, kapan wajib
@@ -28,3 +24,4 @@
   (`pos.py checkpoint`) supaya konvensinya dienforce otomatis (mis. gate
   commit sampai `updated:` + Session Log terisi), bukan cuma aturan di
   kertas yang bergantung AI inget sendiri — dicatat 2026-07-16.
+

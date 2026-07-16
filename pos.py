@@ -95,6 +95,32 @@ ENTITY_FOLDERS = {
 }
 LEDGER_NAME = ".pos-id-ledger.json"
 
+# ENH-0001: versi paket pos.py. SSoT tunggal untuk angka ini adalah
+# pyproject.toml (project.version) — dibaca lewat regex sederhana, BUKAN
+# tomllib (butuh Python 3.11+, tidak dijamin di semua target zero-dependency
+# di atas) dan bukan pula package pihak ketiga. Konstanta literal di sini
+# sengaja DIHINDARI supaya tidak ada dua angka versi yang bisa berbeda diam-
+# diam (Mandatory Rule 05 §5.2 poin 2, SSoT). Catatan penting: ini adalah
+# versi PAKET pos.py, bukan versi kernel spec Planning-OS (`Versi:` di
+# `00-INDEX.md` root) — keduanya kebetulan sama-sama "1.1.0" saat ini tapi
+# secara konsep adalah dua topik berbeda (tool vs spec) yang divalidasi
+# terpisah; lihat Known Risks di ENH-0001.
+_VERSION_FALLBACK = "0.0.0-unknown"
+
+
+def get_version() -> str:
+    """Baca `version = "..."` dari pyproject.toml di sebelah pos.py. Mencoba
+    dua lokasi kandidat (folder yang sama, dan satu level di atasnya) supaya
+    tetap jalan setelah TEMP-05 (root repo reorg) memindah pos.py ke
+    tools/pos.py tanpa perlu edit ulang path ini lagi."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "pyproject.toml", here.parent / "pyproject.toml"):
+        if candidate.exists():
+            m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', candidate.read_text(encoding="utf-8"))
+            if m:
+                return m.group(1)
+    return _VERSION_FALLBACK
+
 # issue #4: canonical filename Decision Log = 09-decision-log.md (selaras urutan
 # scaffold di 04 §4.2). Semua referensi lain (`08-decision-log.md`) di docs/
 # template sudah disamakan ke ini.
@@ -772,6 +798,10 @@ def run_depgraph(root: Path, allow_empty: bool = False, json_output: bool = Fals
 
 def main():
     parser = argparse.ArgumentParser(description="Planning-OS Enforcer CLI")
+    parser.add_argument(
+        "--version", action="version",
+        version=f"pos.py (Planning-OS enforcer) {get_version()}",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_validate = sub.add_parser("validate", help="Validasi struktur satu project instance")
@@ -818,5 +848,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

@@ -1,0 +1,20 @@
+[project]
+name = "plan-os"
+version = "1.1.0"
+description = "Planning-OS Enforcer CLI (pos.py) — zero-dependency spec enforcer for Plan-OS entity files."
+requires-python = ">=3.10"
+readme = "README.md"
+
+[project.scripts]
+pos = "pos:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["pos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
